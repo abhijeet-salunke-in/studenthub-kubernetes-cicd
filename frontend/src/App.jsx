@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import "./App.css";
@@ -21,32 +22,68 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const fetchStudents = async () => {
+  // Fetch students from the backend
+  const fetchStudents = async (showLoader = true) => {
     try {
-      setLoading(true);
+      if (showLoader) {
+        setLoading(true);
+      }
+
       const response = await axios.get("/api/students");
       setStudents(response.data);
       setError("");
-    } catch (err) {
+    } catch {
       setError("Unable to load students.");
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
   };
 
+  // Load students when the component mounts
   useEffect(() => {
-    fetchStudents();
+    let cancelled = false;
+
+    const loadStudents = async () => {
+      try {
+        const response = await axios.get("/api/students");
+
+        if (!cancelled) {
+          setStudents(response.data);
+          setError("");
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Unable to load students.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadStudents();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  // Get unique courses
   const courses = useMemo(() => {
     return [...new Set(students.map((student) => student.course))];
   }, [students]);
 
+  // Search and filter students
   const filteredStudents = useMemo(() => {
     return students.filter((student) => {
+      const searchText = search.toLowerCase();
+
       const matchesSearch =
-        student.name.toLowerCase().includes(search.toLowerCase()) ||
-        student.course.toLowerCase().includes(search.toLowerCase());
+        student.name.toLowerCase().includes(searchText) ||
+        student.course.toLowerCase().includes(searchText);
 
       const matchesCourse =
         courseFilter === "All" || student.course === courseFilter;
@@ -55,14 +92,18 @@ function App() {
     });
   }, [students, search, courseFilter]);
 
+  // Calculate average age
   const averageAge =
     students.length > 0
       ? (
-          students.reduce((total, student) => total + student.age, 0) /
-          students.length
+          students.reduce(
+            (total, student) => total + Number(student.age),
+            0
+          ) / students.length
         ).toFixed(1)
-      : 0;
+      : "0";
 
+  // Open the add student modal
   const openAddModal = () => {
     setForm(emptyForm);
     setEditingId(null);
@@ -70,11 +111,12 @@ function App() {
     setShowModal(true);
   };
 
+  // Open the edit student modal
   const openEditModal = (student) => {
     setForm({
       name: student.name,
       course: student.course,
-      age: student.age
+      age: String(student.age)
     });
 
     setEditingId(student._id);
@@ -82,6 +124,7 @@ function App() {
     setShowModal(true);
   };
 
+  // Close the modal
   const closeModal = () => {
     if (!saving) {
       setShowModal(false);
@@ -90,6 +133,7 @@ function App() {
     }
   };
 
+  // Handle form input changes
   const handleChange = (event) => {
     setForm({
       ...form,
@@ -97,6 +141,7 @@ function App() {
     });
   };
 
+  // Add or update a student
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -126,17 +171,22 @@ function App() {
         await axios.post("/api/students", data);
       }
 
-      await fetchStudents();
-      closeModal();
+      await fetchStudents(false);
+
+      setShowModal(false);
+      setForm(emptyForm);
+      setEditingId(null);
     } catch (err) {
       setError(
-        err.response?.data?.error || "Something went wrong. Please try again."
+        err.response?.data?.error ||
+          "Something went wrong. Please try again."
       );
     } finally {
       setSaving(false);
     }
   };
 
+  // Delete a student
   const deleteStudent = async (id) => {
     const confirmed = window.confirm(
       "Are you sure you want to delete this student?"
@@ -146,8 +196,8 @@ function App() {
 
     try {
       await axios.delete(`/api/students/${id}`);
-      await fetchStudents();
-    } catch (err) {
+      await fetchStudents(false);
+    } catch {
       setError("Unable to delete student.");
     }
   };
@@ -169,7 +219,7 @@ function App() {
         <section className="hero">
           <div>
             <span className="eyebrow">COLLEGE DATABASE</span>
-           <h1>Manage your students.</h1>
+            <h1>Manage your students.</h1>
             <p>
               Add, update, search and manage student records from one simple
               dashboard.
@@ -206,13 +256,13 @@ function App() {
                 type="text"
                 placeholder="Search students..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
               />
             </div>
 
             <select
               value={courseFilter}
-              onChange={(e) => setCourseFilter(e.target.value)}
+              onChange={(event) => setCourseFilter(event.target.value)}
             >
               <option value="All">All Courses</option>
 
@@ -314,9 +364,7 @@ function App() {
                   {editingId ? "UPDATE RECORD" : "NEW RECORD"}
                 </span>
 
-                <h2>
-                  {editingId ? "Edit Student" : "Add Student"}
-                </h2>
+                <h2>{editingId ? "Edit Student" : "Add Student"}</h2>
               </div>
 
               <button className="close" onClick={closeModal}>
